@@ -1,4 +1,4 @@
-# Live Photo GeneratorⒷ
+# Live Photo Generator<sup>Ⓑ</sup>
 
 AI Label: B-[{C}](https://mebebruno.github.io/BrunosAILabelSystem/explain.html?code)
 
