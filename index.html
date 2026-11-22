@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Foto</title>
+  <style>
+    /* Minimalistische Farbvariablen mit automatischem Dark Mode */
+    :root {
+      --bg: #ffffff;
+      --fg: #111111;
+      --muted: #6e6e73;
+      --border: #e5e5e5;
+      --border-strong: #111111;
+      --hover: #f5f5f7;
+      --error: #b91c1c;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c0c0c;
+        --fg: #f2f2f2;
+        --muted: #8e8e93;
+        --border: #262626;
+        --border-strong: #f2f2f2;
+        --hover: #18181a;
+        --error: #f87171;
+      }
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    main {
+      width: 100%;
+      max-width: 440px;
+      margin: 0 auto;
+      padding: 56px 20px 64px;
+    }
+
+    h1 {
+      margin: 0 0 28px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    /* Schlichte Upload-Felder */
+    .inputs {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .file-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 48px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.12s ease, border-color 0.12s ease;
+      user-select: none;
+    }
+
+    .file-row:hover,
+    .file-row.dragover {
+      background: var(--hover);
+      border-color: var(--border-strong);
+    }
+
+    .file-row input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .file-label {
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+
+    .file-name {
+      color: var(--muted);
+      font-size: 14px;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .file-row.loaded .file-name {
+      color: var(--fg);
+    }
+
+    /* Einzeilige Status-/Hinweiszeile (nur bei Bedarf sichtbar) */
+    .status {
+      margin: 14px 2px 0;
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status.error {
+      color: var(--error);
+    }
+
+    .status:empty {
+      display: none;
+    }
+
+    /* Kompakte Download-Liste */
+    .downloads {
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .downloads[hidden] {
+      display: none;
+    }
+
+    .dl-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 44px;
+      padding: 10px 14px;
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font: inherit;
+      font-size: 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color 0.12s ease, border-color 0.12s ease;
+    }
+
+    .dl-btn:hover:not(:disabled) {
+      background: var(--hover);
+      border-color: var(--border-strong);
+    }
+
+    .dl-btn:active:not(:disabled) {
+      opacity: 0.75;
+    }
+
+    .dl-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .dl-ext {
+      color: var(--muted);
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      flex-shrink: 0;
+    }
+
+    /* Sekundäre Einzel-Download-Links für Apple Live Photo */
+    .sub-links {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 2px 2px 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .sub-link {
+      background: none;
+      border: none;
+      padding: 4px 2px;
+      color: var(--muted);
+      font: inherit;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      cursor: pointer;
+    }
+
+    .sub-link:hover:not(:disabled) {
+      color: var(--fg);
+    }
+
+    .sub-link:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    @media (max-width: 480px) {
+      main {
+        padding: 36px 16px 48px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Live Foto</h1>
+
+    <!-- Datei-Upload für Foto und Video -->
+    <section class="inputs" aria-label="Dateiauswahl">
+      <label class="file-row" id="photoRow" for="photoInput">
+        <span class="file-label">Foto</span>
+        <span class="file-name" id="photoName">Auswählen</span>
+        <input id="photoInput" type="file" accept="image/*">
+      </label>
+
+      <label class="file-row" id="videoRow" for="videoInput">
+        <span class="file-label">Video</span>
+        <span class="file-name" id="videoName">Auswählen</span>
+        <input id="videoInput" type="file" accept="video/mp4,video/quicktime,video/*">
+      </label>
+    </section>
+
+    <!-- Optionale einzeilige Status-/Hinweiszeile -->
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+
+    <!-- Download-Buttons erscheinen automatisch, sobald Foto und Video bereit sind -->
+    <section class="downloads" id="downloads" aria-label="Download-Formate" hidden>
+      <button type="button" class="dl-btn" data-format="universal">
+        <span>Universal Motion Photo</span>
+        <span class="dl-ext">.MP.jpg</span>
+      </button>
+
+      <button type="button" class="dl-btn" data-format="google-v2">
+        <span>Google / Android Motion Photo v2</span>
+        <span class="dl-ext">.MP.jpg</span>
+      </button>
+
+      <button type="button" class="dl-btn" data-format="google-legacy">
+        <span>Google MicroVideo (Legacy)</span>
+        <span class="dl-ext">MVIMG_.jpg</span>
+      </button>
+
+      <button type="button" class="dl-btn" data-format="samsung">
+        <span>Samsung Motion Photo</span>
+        <span class="dl-ext">.jpg</span>
+      </button>
+
+      <div>
+        <button type="button" class="dl-btn" id="appleZipBtn" data-format="apple-zip">
+          <span>Apple Live Photo</span>
+          <span class="dl-ext">.zip</span>
+        </button>
+        <div class="sub-links">
+          <span>Einzeln:</span>
+          <button type="button" class="sub-link" id="appleJpgBtn" data-format="apple-jpg">.JPG</button>
+          <span>·</span>
+          <button type="button" class="sub-link" id="appleMovBtn" data-format="apple-mov">.MOV</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+
+      /* =========================================================================
+       * Anwendungszustand
+       * ========================================================================= */
+      const state = {
+        photoBytes: null,       // Uint8Array (immer gültiges JPEG)
+        photoBaseName: 'livefoto',
+        photoConverted: false,  // true, wenn z.B. PNG/WebP per Canvas konvertiert wurde
+        photoSeq: 0,            // Schutz vor Race Conditions bei schnellem Dateitausch
+        videoBytes: null,       // Uint8Array
+        videoName: '',
+        videoIsMp4Mov: false,   // true, wenn gültiger MP4/MOV Container mit moov-Atom
+        videoSeq: 0,
+        appleUuid: ''           // Gemeinsame UUID v4 für das aktuelle Foto+Video-Paar
+      };
+
+      const encoder = new TextEncoder();
+
+      /* DOM-Referenzen */
+      const photoInput = document.getElementById('photoInput');
+      const videoInput = document.getElementById('videoInput');
+      const photoRow = document.getElementById('photoRow');
+      const videoRow = document.getElementById('videoRow');
+      const photoNameEl = document.getElementById('photoName');
+      const videoNameEl = document.getElementById('videoName');
+      const statusEl = document.getElementById('status');
+      const downloadsEl = document.getElementById('downloads');
+      const appleZipBtn = document.getElementById('appleZipBtn');
+      const appleJpgBtn = document.getElementById('appleJpgBtn');
+      const appleMovBtn = document.getElementById('appleMovBtn');
+
+      /* =========================================================================
+       * Allgemeine Byte- und Hilfsfunktionen
+       * ========================================================================= */
+
+      /** Fügt mehrere Uint8Arrays effizient zu einem einzigen Uint8Array zusammen. */
+      function concatBytes(...arrays) {
+        let total = 0;
+        for (let i = 0; i < arrays.length; i++) {
+          total += arrays[i].length;
+        }
+        const out = new Uint8Array(total);
+        let offset = 0;
+        for (let i = 0; i < arrays.length; i++) {
+          out.set(arrays[i], offset);
+          offset += arrays[i].length;
+        }
+        return out;
+      }
+
+      /** Konvertiert einen reinen ASCII-String in Bytes. */
+      function asciiBytes(str) {
+        const out = new Uint8Array(str.length);
+        for (let i = 0; i < str.length; i++) {
+          out[i] = str.charCodeAt(i) & 0xFF;
+        }
+        return out;
+      }
+
+      /** Liest einen ASCII-String aus einem Byte-Array. */
+      function readAscii(bytes, offset, length) {
+        let s = '';
+        const end = Math.min(bytes.length, offset + length);
+        for (let i = offset; i < end; i++) {
+          s += String.fromCharCode(bytes[i]);
+        }
+        return s;
+      }
+
+      /** Prüft, ob ein Uint8Array an einem Offset mit einer bestimmten Bytefolge beginnt. */
+      function startsWithBytes(bytes, offset, prefix) {
+        if (offset + prefix.length > bytes.length) return false;
+        for (let i = 0; i < prefix.length; i++) {
+          if (bytes[offset + i] !== prefix[i]) return false;
+        }
+        return true;
+      }
+
+      /** Erzeugt eine kryptografisch zufällige UUID v4 in Großbuchstaben. */
+      function generateUuidV4() {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+          return crypto.randomUUID().toUpperCase();
+        }
+        const b = new Uint8Array(16);
+        crypto.getRandomValues(b);
+        b[6] = (b[6] & 0x0F) | 0x40;
+        b[8] = (b[8] & 0x3F) | 0x80;
+        const hex = Array.from(b, x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+      }
+
+      /** Bereinigt den Basisnamen einer Datei für sichere Dateinamen. */
+      function sanitizeBaseName(filename) {
+        const stripped = (filename || '').replace(/\.[^.]+$/, '');
+        const clean = stripped.replace(/[\\/:*?"<>|]+/g, '_').trim();
+        return clean || 'livefoto';
+      }
+
+      /** Formatiert Byte-Größen kompakt auf Deutsch. */
+      function formatSize(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+      }
+
+      /** Setzt die einzeilige Status-/Hinweiszeile. */
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message || '';
+        statusEl.title = message || '';
+        statusEl.classList.toggle('error', Boolean(isError));
+      }
+
+      /** Löst einen direkten Datei-Download im Browser aus. */
+      function triggerDownload(bytes, filename, mimeType) {
+        const blob = new Blob([bytes], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 15000);
+      }
+
+      /* =========================================================================
+       * Bild-Konvertierung (Canvas -> JPEG 0.95) & JPEG-Segment-Parser
+       * ========================================================================= */
+
+      /** Prüft anhand der Magic Bytes (0xFFD8), ob es sich um ein echtes JPEG handelt. */
+      function isJpeg(bytes) {
+        return bytes && bytes.length >= 4 && bytes[0] === 0xFF && bytes[1] === 0xD8;
+      }
+
+      /** Wandelt Nicht-JPEG-Bilder (PNG, WebP, GIF, AVIF etc.) per Canvas in JPEG (0.95) um. */
+      function convertImageToJpeg(file) {
+        return new Promise((resolve, reject) => {
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.naturalWidth || img.width;
+              canvas.height = img.naturalHeight || img.height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                throw new Error('Canvas-Kontext nicht verfügbar.');
+              }
+              // Weißer Hintergrund für transparente Bilder (z.B. PNG/WebP mit Alpha)
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0);
+
+              canvas.toBlob(async (blob) => {
+                URL.revokeObjectURL(url);
+                if (!blob) {
+                  reject(new Error('JPEG-Konvertierung fehlgeschlagen.'));
+                  return;
+                }
+                try {
+                  const buf = await blob.arrayBuffer();
+                  resolve(new Uint8Array(buf));
+                } catch (err) {
+                  reject(err);
+                }
+              }, 'image/jpeg', 0.95);
+            } catch (err) {
+              URL.revokeObjectURL(url);
+              reject(err);
+            }
+          };
+
+          img.onerror = () => {
+            URL.revokeObjectURL(url);
+            reject(new Error('Bild konnte nicht geladen werden.'));
+          };
+
+          img.src = url;
+        });
+      }
+
+      /**
+       * Liest das EXIF-Orientation-Tag (0x0112) aus einem bestehenden EXIF-APP1-Payload,
+       * damit Hochformat-Fotos beim Neuschreiben des Apple-EXIFs nicht gedreht werden.
+       */
+      function readExifOrientation(exifPayload) {
+        try {
+          if (exifPayload.length < 14) return 1;
+          // Payload beginnt mit "Exif\0\0" (6 Bytes), danach TIFF-Header
+          const tiffStart = 6;
+          const view = new DataView(exifPayload.buffer, exifPayload.byteOffset + tiffStart, exifPayload.byteLength - tiffStart);
+          const order = readAscii(exifPayload, tiffStart, 2);
+          let littleEndian;
+          if (order === 'II') littleEndian = true;
+          else if (order === 'MM') littleEndian = false;
+          else return 1;
+
+          if (view.getUint16(2, littleEndian) !== 42) return 1;
+          const ifd0Offset = view.getUint32(4, littleEndian);
+          if (ifd0Offset + 2 > view.byteLength) return 1;
+
+          const count = view.getUint16(ifd0Offset, littleEndian);
+          for (let i = 0; i < count; i++) {
+            const entryOff = ifd0Offset + 2 + i * 12;
+            if (entryOff + 12 > view.byteLength) break;
+            const tag = view.getUint16(entryOff, littleEndian);
+            if (tag === 0x0112) {
+              const type = view.getUint16(entryOff + 2, littleEndian);
+              const valCount = view.getUint32(entryOff + 4, littleEndian);
+              if (type === 3 && valCount === 1) {
+                const orientation = view.getUint16(entryOff + 8, littleEndian);
+                if (orientation >= 1 && orientation <= 8) return orientation;
+              }
+            }
+          }
+        } catch (_) {
+          // Bei beschädigtem EXIF sicher auf Standard-Orientierung 1 zurückfallen
+        }
+        return 1;
+      }
+
+      /**
+       * Parst ein JPEG sauber Segment für Segment bis EOI (0xFFD9):
+       * - Entfernt optional vorhandene widersprüchliche Segmente (z.B. altes XMP oder EXIF)
+       * - Schneidet eventuell bereits angehängte Alt-Daten nach EOI (0xFFD9) sauber ab
+       * - Liefert die Segmente nach SOI (0xFFD8) zurück, damit neue APP1-Segmente
+       *   direkt nach 0xFFD8 eingefügt werden können.
+       */
+      function parseAndCleanJpeg(jpegBytes, options = {}) {
+        const { stripXmp = false, stripExif = false } = options;
+        if (!isJpeg(jpegBytes)) {
+          throw new Error('Ungültige JPEG-Datei (SOI 0xFFD8 fehlt).');
+        }
+
+        const xmpPrefix = asciiBytes('http://ns.adobe.com/xap/1.0/\0');
+        const extXmpPrefix = asciiBytes('http://ns.adobe.com/xmp/extension/\0');
+        const exifPrefix = asciiBytes('Exif\0\0');
+
+        const parts = [];
+        let orientation = 1;
+        let pos = 2; // direkt nach SOI (0xFFD8)
+        let foundEoi = false;
+
+        while (pos < jpegBytes.length) {
+          // Suche nächsten Marker-Start (0xFF)
+          if (jpegBytes[pos] !== 0xFF) {
+            // Unerwartete Bytes vor SOS: Rest sicher übernehmen und beenden
+            parts.push(jpegBytes.subarray(pos));
+            break;
+          }
+
+          const segStart = pos;
+          // Führende 0xFF-Füllbytes überspringen
+          while (pos < jpegBytes.length && jpegBytes[pos] === 0xFF) {
+            pos++;
+          }
+          if (pos >= jpegBytes.length) break;
+
+          const marker = jpegBytes[pos];
+          pos++;
+
+          // EOI (0xFFD9): reguläres JPEG-Ende
+          if (marker === 0xD9) {
+            parts.push(new Uint8Array([0xFF, 0xD9]));
+            foundEoi = true;
+            break;
+          }
+
+          // Eigenständige Marker ohne Längenfeld (TEM 0x01, RST0-RST7 0xD0-0xD7, SOI 0xD8)
+          if (marker === 0x01 || (marker >= 0xD0 && marker <= 0xD8)) {
+            parts.push(new Uint8Array([0xFF, marker]));
+            continue;
+          }
+
+          // Längenfeld (2 Bytes Big-Endian, inklusive der 2 Längenbytes selbst)
+          if (pos + 2 > jpegBytes.length) {
+            parts.push(jpegBytes.subarray(segStart));
+            break;
+          }
+          const segLen = (jpegBytes[pos] << 8) | jpegBytes[pos + 1];
+          if (segLen < 2 || pos + segLen > jpegBytes.length) {
+            parts.push(jpegBytes.subarray(segStart));
+            break;
+          }
+
+          // SOS (0xFFDA): Start of Scan + Entropie-codierte Bilddaten bis zum nächsten echten Marker
+          if (marker === 0xDA) {
+            let scanPos = pos + segLen;
+            while (scanPos < jpegBytes.length) {
+              if (jpegBytes[scanPos] !== 0xFF) {
+                scanPos++;
+                continue;
+              }
+              if (scanPos + 1 >= jpegBytes.length) {
+                scanPos = jpegBytes.length;
+                break;
+              }
+              const next = jpegBytes[scanPos + 1];
+              if (next === 0x00) {
+                // Byte-Stuffing innerhalb der Scan-Daten
+                scanPos += 2;
+              } else if (next === 0xFF) {
+                // Füllbyte vor einem Marker
+                scanPos += 1;
+              } else if (next >= 0xD0 && next <= 0xD7) {
+                // Restart-Marker innerhalb der Scan-Daten
+                scanPos += 2;
+              } else {
+                // Nächster echter Marker (z.B. EOI 0xD9 oder weiterer Scan bei progressivem JPEG)
+                break;
+              }
+            }
+            parts.push(jpegBytes.subarray(segStart, scanPos));
+            pos = scanPos;
+            continue;
+          }
+
+          // Normales Segment (APPn, DQT, DHT, SOFn, COM, DRI etc.)
+          const segEnd = pos + segLen;
+          const payload = jpegBytes.subarray(pos + 2, segEnd);
+          let drop = false;
+
+          if (marker === 0xE1) {
+            if (startsWithBytes(payload, 0, exifPrefix)) {
+              orientation = readExifOrientation(payload);
+              if (stripExif) drop = true;
+            } else if (
+              stripXmp &&
+              (startsWithBytes(payload, 0, xmpPrefix) || startsWithBytes(payload, 0, extXmpPrefix))
+            ) {
+              drop = true;
+            }
+          }
+
+          if (!drop) {
+            parts.push(jpegBytes.subarray(segStart, segEnd));
+          }
+          pos = segEnd;
+        }
+
+        // Sicherstellen, dass das JPEG mit EOI (0xFFD9) abschließt
+        if (!foundEoi) {
+          parts.push(new Uint8Array([0xFF, 0xD9]));
+        }
+
+        return {
+          body: concatBytes(...parts), // Alles nach SOI (0xFFD8) bis inkl. EOI (0xFFD9)
+          orientation
+        };
+      }
+
+      /** Baut ein vollständiges JPEG-APP1-Segment (0xFFE1 + 2-Byte BE Länge + Payload). */
+      function buildJpegApp1(payloadBytes) {
+        const totalLengthField = 2 + payloadBytes.length;
+        if (totalLengthField > 0xFFFF) {
+          throw new Error('APP1-Segment überschreitet die maximale JPEG-Länge von 65535 Bytes.');
+        }
+        const header = new Uint8Array(4);
+        header[0] = 0xFF;
+        header[1] = 0xE1;
+        header[2] = (totalLengthField >>> 8) & 0xFF;
+        header[3] = totalLengthField & 0xFF;
+        return concatBytes(header, payloadBytes);
+      }
+
+      /** Baut ein XMP-APP1-Segment aus einem XMP-XML-String. */
+      function buildXmpApp1(xmpXmlString) {
+        const xmpHeader = asciiBytes('http://ns.adobe.com/xap/1.0/\0');
+        const xmpBody = encoder.encode(xmpXmlString);
+        return buildJpegApp1(concatBytes(xmpHeader, xmpBody));
+      }
+
+      /* =========================================================================
+       * Protokoll 1: Universal Motion Photo (.MP.jpg)
+       * Google Motion Photo v2 + Legacy Google MicroVideo v1 + Xiaomi MiCamera
+       * ========================================================================= */
+      function buildUniversalMotionPhoto(jpegBytes, videoBytes) {
+        const videoLen = videoBytes.length;
+        const { body } = parseAndCleanJpeg(jpegBytes, { stripXmp: true });
+
+        const xmp =
+          `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">` +
+            `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+              `<rdf:Description rdf:about="" ` +
+                `xmlns:GCamera="http://ns.google.com/photos/1.0/camera/" ` +
+                `xmlns:Container="http://ns.google.com/photos/1.0/container/" ` +
+                `xmlns:Item="http://ns.google.com/photos/1.0/container/item/" ` +
+                `xmlns:MiCamera="http://ns.xiaomi.com/photos/1.0/camera/" ` +
+                `GCamera:MotionPhoto="1" ` +
+                `GCamera:MotionPhotoVersion="1" ` +
+                `GCamera:MotionPhotoPresentationTimestampUs="0" ` +
+                `GCamera:MicroVideo="1" ` +
+                `GCamera:MicroVideoVersion="1" ` +
+                `GCamera:MicroVideoOffset="${videoLen}" ` +
+                `GCamera:MicroVideoPresentationTimestampUs="0" ` +
+                `MiCamera:MicroVideo="1" ` +
+                `MiCamera:MicroVideoVersion="1" ` +
+                `MiCamera:MicroVideoOffset="${videoLen}" ` +
+                `MiCamera:MicroVideoPresentationTimestampUs="0">` +
+                `<Container:Directory>` +
+                  `<rdf:Seq>` +
+                    `<rdf:li rdf:parseType="Resource">` +
+                      `<Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0" Item:Padding="0"/>` +
+                    `</rdf:li>` +
+                    `<rdf:li rdf:parseType="Resource">` +
+                      `<Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="${videoLen}" Item:Padding="0"/>` +
+                    `</rdf:li>` +
+                  `</rdf:Seq>` +
+                `</Container:Directory>` +
+              `</rdf:Description>` +
+            `</rdf:RDF>` +
+          `</x:xmpmeta>`;
+
+        const soi = new Uint8Array([0xFF, 0xD8]);
+        const xmpApp1 = buildXmpApp1(xmp);
+        return concatBytes(soi, xmpApp1, body, videoBytes);
+      }
+
+      /* =========================================================================
+       * Protokoll 2: Google / Android Motion Photo v2 (.MP.jpg)
+       * ========================================================================= */
+      function buildGoogleMotionPhotoV2(jpegBytes, videoBytes) {
+        const videoLen = videoBytes.length;
+        const { body } = parseAndCleanJpeg(jpegBytes, { stripXmp: true });
+
+        const xmp =
+          `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">` +
+            `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+              `<rdf:Description rdf:about="" ` +
+                `xmlns:GCamera="http://ns.google.com/photos/1.0/camera/" ` +
+                `xmlns:Container="http://ns.google.com/photos/1.0/container/" ` +
+                `xmlns:Item="http://ns.google.com/photos/1.0/container/item/" ` +
+                `GCamera:MotionPhoto="1" ` +
+                `GCamera:MotionPhotoVersion="1" ` +
+                `GCamera:MotionPhotoPresentationTimestampUs="0">` +
+                `<Container:Directory>` +
+                  `<rdf:Seq>` +
+                    `<rdf:li rdf:parseType="Resource">` +
+                      `<Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0" Item:Padding="0"/>` +
+                    `</rdf:li>` +
+                    `<rdf:li rdf:parseType="Resource">` +
+                      `<Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="${videoLen}" Item:Padding="0"/>` +
+                    `</rdf:li>` +
+                  `</rdf:Seq>` +
+                `</Container:Directory>` +
+              `</rdf:Description>` +
+            `</rdf:RDF>` +
+          `</x:xmpmeta>`;
+
+        const soi = new Uint8Array([0xFF, 0xD8]);
+        const xmpApp1 = buildXmpApp1(xmp);
+        return concatBytes(soi, xmpApp1, body, videoBytes);
+      }
+
+      /* =========================================================================
+       * Protokoll 3: Google MicroVideo Legacy (MVIMG_*.jpg)
+       * ========================================================================= */
+      function buildGoogleMicroVideoLegacy(jpegBytes, videoBytes) {
+        const videoLen = videoBytes.length;
+        const { body } = parseAndCleanJpeg(jpegBytes, { stripXmp: true });
+
+        const xmp =
+          `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">` +
+            `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+              `<rdf:Description rdf:about="" ` +
+                `xmlns:GCamera="http://ns.google.com/photos/1.0/camera/" ` +
+                `GCamera:MicroVideo="1" ` +
+                `GCamera:MicroVideoVersion="1" ` +
+                `GCamera:MicroVideoOffset="${videoLen}" ` +
+                `GCamera:MicroVideoPresentationTimestampUs="0"/>` +
+            `</rdf:RDF>` +
+          `</x:xmpmeta>`;
+
+        const soi = new Uint8Array([0xFF, 0xD8]);
+        const xmpApp1 = buildXmpApp1(xmp);
+        return concatBytes(soi, xmpApp1, body, videoBytes);
+      }
+
+      /* =========================================================================
+       * Protokoll 4: Samsung Motion Photo (SEFT v101)
+       * Aufbau nach JPEG EOI (0xFFD9):
+       *   - 12-Byte Record-Header (LE): uint16 0, uint16 0x0a30, uint32 16, uint32 videoLen
+       *   - 16-Byte Key: ASCII "MotionPhoto_Data"
+       *   - Video-Bytes (videoLen Bytes)
+       *   - 24-Byte SEFH-Header (LE): "SEFH", uint32 101, uint32 1,
+       *     Entry: uint16 0, uint16 0x0a30, uint32 (12+16+videoLen), uint32 (12+16+videoLen)
+       *   - 8-Byte Trailer (LE): uint32 24 (sefhSize), "SEFT"
+       * ========================================================================= */
+      function buildSamsungMotionPhoto(jpegBytes, videoBytes) {
+        const { body } = parseAndCleanJpeg(jpegBytes);
+        const videoLen = videoBytes.length;
+        const keyBytes = asciiBytes('MotionPhoto_Data'); // exakt 16 Bytes
+        const recordTotalLen = 12 + keyBytes.length + videoLen;
+
+        // 12-Byte Record-Header (Little-Endian)
+        const recordHeader = new Uint8Array(12);
+        const rhView = new DataView(recordHeader.buffer);
+        rhView.setUint16(0, 0, true);          // padding = 0
+        rhView.setUint16(2, 0x0a30, true);     // type = MotionPhoto_Data (0x0a30)
+        rhView.setUint32(4, 16, true);         // key length = 16
+        rhView.setUint32(8, videoLen, true);   // data length = videoLen
+
+        // 24-Byte SEFH-Header + 8-Byte SEFT-Trailer (zusammen 32 Bytes, Little-Endian)
+        const sefhSize = 24;
+        const footer = new Uint8Array(sefhSize + 8);
+        const fView = new DataView(footer.buffer);
+        footer.set(asciiBytes('SEFH'), 0);
+        fView.setUint32(4, 101, true);               // SEFT-Version 101
+        fView.setUint32(8, 1, true);                 // Anzahl Einträge = 1
+        fView.setUint16(12, 0, true);                // Entry padding = 0
+        fView.setUint16(14, 0x0a30, true);           // Entry type = 0x0a30
+        fView.setUint32(16, recordTotalLen, true);   // offsetFromSEFH = 12 + 16 + videoLen
+        fView.setUint32(20, recordTotalLen, true);   // length = 12 + 16 + videoLen
+        fView.setUint32(24, sefhSize, true);         // sefhSize = 24
+        footer.set(asciiBytes('SEFT'), 28);          // Trailer-Signatur "SEFT"
+
+        const soi = new Uint8Array([0xFF, 0xD8]);
+        return concatBytes(soi, body, recordHeader, keyBytes, videoBytes, footer);
+      }
+
+      /* =========================================================================
+       * Protokoll 5A: Apple Live Photo — .JPG (EXIF APP1 + Apple MakerNote 0x0011)
+       * Big-Endian TIFF ("MM", 0x002A):
+       *   - TIFF Header (Offset 0..7)
+       *   - IFD0 (Offset 8..37): Orientation (0x0112), ExifIFD Pointer (0x8769 -> 38)
+       *   - ExifIFD (Offset 38..67): ExifVersion (0x9000), MakerNote (0x927C -> 68)
+       *   - Apple MakerNote (Offset 68..):
+       *       "Apple iOS\0\x00\x01MM" (14 Bytes)
+       *       IFD Count = 1 (2 Bytes)
+       *       Tag 0x0011 (ASCII, Count = uuidLen+1, Offset = 32 relativ zu MakerNote-Start) (12 Bytes)
+       *       Next IFD = 0 (4 Bytes)
+       *       UUID ASCII + NUL (37 Bytes)
+       * ========================================================================= */
+      function buildAppleLivePhotoJpg(jpegBytes, uuid) {
+        const { body, orientation } = parseAndCleanJpeg(jpegBytes, { stripExif: true });
+
+        // 1. Apple MakerNote aufbauen
+        const uuidAscii = asciiBytes(uuid);
+        const uuidCount = uuidAscii.length + 1; // 36 Zeichen + NUL = 37 Bytes
+        const makerHeader = new Uint8Array([
+          0x41, 0x70, 0x70, 0x6C, 0x65, 0x20, 0x69, 0x4F, 0x53, 0x00, // "Apple iOS\0"
+          0x00, 0x01,                                                 // Version 1
+          0x4D, 0x4D                                                  // "MM" (Big-Endian)
+        ]); // 14 Bytes
+
+        const makerValueOffset = 14 + 2 + 12 + 4; // = 32 (relativ zum MakerNote-Start)
+        const makerNote = new Uint8Array(makerValueOffset + uuidCount);
+        const mnView = new DataView(makerNote.buffer);
+
+        makerNote.set(makerHeader, 0);
+        mnView.setUint16(14, 1, false);              // 1 Eintrag im Apple MakerNote IFD
+        mnView.setUint16(16, 0x0011, false);         // Tag 0x0011: ContentIdentifier
+        mnView.setUint16(18, 2, false);              // Typ 2: ASCII
+        mnView.setUint32(20, uuidCount, false);      // Länge inkl. NUL-Byte (37)
+        mnView.setUint32(24, makerValueOffset, false); // Offset = 32
+        mnView.setUint32(28, 0, false);              // Next IFD = 0
+        makerNote.set(uuidAscii, makerValueOffset);  // UUID-String
+        makerNote[makerValueOffset + uuidAscii.length] = 0x00; // NUL-Terminator
+
+        // 2. Big-Endian TIFF-Block aufbauen
+        const ifd0Offset = 8;
+        const exifIfdOffset = 8 + 2 + (2 * 12) + 4;       // = 38
+        const makerNoteOffset = exifIfdOffset + 2 + (2 * 12) + 4; // = 68
+        const tiffBytes = new Uint8Array(makerNoteOffset + makerNote.length);
+        const tv = new DataView(tiffBytes.buffer);
+
+        // TIFF-Header (Offset 0..7)
+        tiffBytes[0] = 0x4D; // 'M'
+        tiffBytes[1] = 0x4D; // 'M' (Big-Endian)
+        tv.setUint16(2, 0x002A, false);       // TIFF Magic 42
+        tv.setUint32(4, ifd0Offset, false);   // Offset zu IFD0 = 8
+
+        // IFD0 (Offset 8..37, Tags aufsteigend sortiert: 0x0112, 0x8769)
+        tv.setUint16(8, 2, false);            // 2 Einträge
+        // Eintrag 0: Orientation (0x0112, SHORT, Count 1, linksbündig im 4-Byte-Feld bei BE)
+        tv.setUint16(10, 0x0112, false);
+        tv.setUint16(12, 3, false);           // SHORT
+        tv.setUint32(14, 1, false);           // Count = 1
+        tv.setUint16(18, orientation, false); // Wert (1..8)
+        tv.setUint16(20, 0, false);           // Padding
+        // Eintrag 1: ExifIFDPointer (0x8769, LONG, Count 1, Offset = 38)
+        tv.setUint16(22, 0x8769, false);
+        tv.setUint16(24, 4, false);           // LONG
+        tv.setUint32(26, 1, false);           // Count = 1
+        tv.setUint32(30, exifIfdOffset, false);
+        // Next IFD = 0
+        tv.setUint32(34, 0, false);
+
+        // ExifIFD (Offset 38..67, Tags aufsteigend sortiert: 0x9000, 0x927C)
+        tv.setUint16(38, 2, false);           // 2 Einträge
+        // Eintrag 0: ExifVersion (0x9000, UNDEFINED, Count 4, "0232")
+        tv.setUint16(40, 0x9000, false);
+        tv.setUint16(42, 7, false);           // UNDEFINED
+        tv.setUint32(44, 4, false);           // Count = 4
+        tiffBytes.set(asciiBytes('0232'), 48);
+        // Eintrag 1: MakerNote (0x927C, UNDEFINED, Count = makerNote.length, Offset = 68)
+        tv.setUint16(52, 0x927C, false);
+        tv.setUint16(54, 7, false);           // UNDEFINED
+        tv.setUint32(56, makerNote.length, false);
+        tv.setUint32(60, makerNoteOffset, false);
+        // Next IFD = 0
+        tv.setUint32(64, 0, false);
+
+        // Apple MakerNote ab Offset 68 einfügen
+        tiffBytes.set(makerNote, makerNoteOffset);
+
+        // 3. APP1 EXIF-Segment direkt nach SOI (0xFFD8) einsetzen
+        const exifApp1 = buildJpegApp1(concatBytes(asciiBytes('Exif\0\0'), tiffBytes));
+        const soi = new Uint8Array([0xFF, 0xD8]);
+        return concatBytes(soi, exifApp1, body);
+      }
+
+      /* =========================================================================
+       * Protokoll 5B: Apple Live Photo — .MOV (QuickTime moov -> meta)
+       * Parst Top-Level-Atome inkl. 64-Bit largesize.
+       * Schreibt QuickTime meta-Atom (ohne Version/Flags-Header!) mit:
+       *   - hdlr ('mdta')
+       *   - keys ('com.apple.quicktime.content.identifier', 'com.apple.quicktime.still-image-time')
+       *   - ilst (Index 1: UTF-8 UUID, Index 2: int8 0)
+       * Liegt moov vor mdat, wird das alte moov in-place durch ein gleich großes
+       * free-Atom ersetzt und das neue moov ans Dateiende gehängt, sodass alle
+       * stco/co64-Offsets zu 100 % gültig bleiben.
+       * ========================================================================= */
+
+      /** Parst eine Sequenz von MP4/MOV-Atomen innerhalb eines Bereichs [start, end). */
+      function parseAtoms(bytes, start, end) {
+        const atoms = [];
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        let pos = start;
+
+        while (pos + 8 <= end) {
+          const size32 = view.getUint32(pos, false);
+          const type = readAscii(bytes, pos + 4, 4);
+          let headerSize = 8;
+          let size = size32;
+
+          if (size32 === 1) {
+            // 64-Bit largesize
+            if (pos + 16 > end) break;
+            const hi = view.getUint32(pos + 8, false);
+            const lo = view.getUint32(pos + 12, false);
+            size = hi * 0x100000000 + lo;
+            headerSize = 16;
+          } else if (size32 === 0) {
+            // Erstreckt sich bis zum Ende des Containers/der Datei
+            size = end - pos;
+          }
+
+          if (size < headerSize || pos + size > end) {
+            break;
+          }
+
+          atoms.push({
+            type,
+            offset: pos,
+            size,
+            size32,
+            headerSize
+          });
+          pos += size;
+        }
+
+        return atoms;
+      }
+
+      /** Prüft, ob die Video-Bytes ein gültiger MP4/MOV-Container mit moov-Atom sind. */
+      function hasMovMoovAtom(videoBytes) {
+        if (!videoBytes || videoBytes.length < 16) return false;
+        const atoms = parseAtoms(videoBytes, 0, videoBytes.length);
+        return atoms.some(a => a.type === 'moov');
+      }
+
+      /** Hilfsfunktion zum Erstellen eines QuickTime-Atoms mit 4CC-Typ (String oder uint32). */
+      function buildAtom(typeOrIndex, payload) {
+        const totalSize = 8 + payload.length;
+        if (totalSize <= 0xFFFFFFFF) {
+          const out = new Uint8Array(totalSize);
+          const view = new DataView(out.buffer);
+          view.setUint32(0, totalSize, false);
+          if (typeof typeOrIndex === 'string') {
+            out.set(asciiBytes(typeOrIndex), 4);
+          } else {
+            view.setUint32(4, typeOrIndex, false);
+          }
+          out.set(payload, 8);
+          return out;
+        }
+        // Fallback auf 64-Bit largesize falls > 4 GB
+        const fullSize = 16 + payload.length;
+        const out = new Uint8Array(fullSize);
+        const view = new DataView(out.buffer);
+        view.setUint32(0, 1, false);
+        if (typeof typeOrIndex === 'string') {
+          out.set(asciiBytes(typeOrIndex), 4);
+        } else {
+          view.setUint32(4, typeOrIndex, false);
+        }
+        view.setUint32(8, Math.floor(fullSize / 0x100000000), false);
+        view.setUint32(12, fullSize >>> 0, false);
+        out.set(payload, 16);
+        return out;
+      }
+
+      /** Erzeugt das QuickTime meta-Atom (hdlr + keys + ilst) für Apple Live Photo. */
+      function buildQuickTimeLivePhotoMeta(uuid) {
+        // 1. hdlr-Atom (33 Bytes: Version/Flags=0, Predefined=0, Handler='mdta', Reserved=12x0, Name=0x00)
+        const hdlrPayload = new Uint8Array(25);
+        hdlrPayload.set(asciiBytes('mdta'), 8); // Offset 8 im Payload = Byte 16 im Atom
+        const hdlrAtom = buildAtom('hdlr', hdlrPayload);
+
+        // 2. keys-Atom
+        const key1Name = encoder.encode('com.apple.quicktime.content.identifier');
+        const key2Name = encoder.encode('com.apple.quicktime.still-image-time');
+        const key1Entry = buildAtom('mdta', key1Name);
+        const key2Entry = buildAtom('mdta', key2Name);
+
+        const keysHeader = new Uint8Array(8);
+        const khView = new DataView(keysHeader.buffer);
+        khView.setUint32(0, 0, false); // Version (0) + Flags (0)
+        khView.setUint32(4, 2, false); // Entry Count = 2
+        const keysAtom = buildAtom('keys', concatBytes(keysHeader, key1Entry, key2Entry));
+
+        // 3. ilst-Atom
+        // Eintrag 1 (Key-Index 1): UTF-8 String (Data Type = 1) mit UUID
+        const uuidBytes = encoder.encode(uuid);
+        const data1Payload = new Uint8Array(8 + uuidBytes.length);
+        const d1View = new DataView(data1Payload.buffer);
+        d1View.setUint32(0, 1, false); // Well-known type 1 = UTF-8
+        d1View.setUint32(4, 0, false); // Locale = 0
+        data1Payload.set(uuidBytes, 8);
+        const item1 = buildAtom(1, buildAtom('data', data1Payload));
+
+        // Eintrag 2 (Key-Index 2): BE Signed Integer (Data Type = 21) mit int8 Wert 0
+        const data2Payload = new Uint8Array(9);
+        const d2View = new DataView(data2Payload.buffer);
+        d2View.setUint32(0, 21, false); // Well-known type 21 = BE Signed Integer (1 Byte = int8)
+        d2View.setUint32(4, 0, false);  // Locale = 0
+        data2Payload[8] = 0x00;         // int8 = 0
+        const item2 = buildAtom(2, buildAtom('data', data2Payload));
+
+        const ilstAtom = buildAtom('ilst', concatBytes(item1, item2));
+
+        // QuickTime meta-Atom (direkt Container ohne ISO-MP4-Version/Flags!)
+        return buildAtom('meta', concatBytes(hdlrAtom, keysAtom, ilstAtom));
+      }
+
+      /** Baut die Apple Live Photo .MOV-Datei mit gültigen Offsets. */
+      function buildAppleLivePhotoMov(videoBytes, uuid) {
+        const topAtoms = parseAtoms(videoBytes, 0, videoBytes.length);
+        const moovIndex = topAtoms.findIndex(a => a.type === 'moov');
+        if (moovIndex === -1) {
+          throw new Error('Kein moov-Atom im Video gefunden (nur MP4/MOV unterstützt).');
+        }
+
+        const moov = topAtoms[moovIndex];
+        const moovContentStart = moov.offset + moov.headerSize;
+        const moovContentEnd = moov.offset + moov.size;
+
+        // Kind-Atome von moov parsen und ein evtl. vorhandenes meta-Atom sauber ersetzen
+        const moovChildren = parseAtoms(videoBytes, moovContentStart, moovContentEnd);
+        const keptChildren = [];
+        for (let i = 0; i < moovChildren.length; i++) {
+          const child = moovChildren[i];
+          if (child.type === 'meta') continue;
+          keptChildren.push(videoBytes.subarray(child.offset, child.offset + child.size));
+        }
+
+        const newMeta = buildQuickTimeLivePhotoMeta(uuid);
+        const newMoov = buildAtom('moov', concatBytes(...keptChildren, newMeta));
+
+        // Fall 1: moov ist das letzte Atom am Dateiende -> direkt ersetzen, Offsets davor bleiben identisch
+        const moovIsAtEnd = (moov.offset + moov.size === videoBytes.length);
+        if (moovIsAtEnd) {
+          return concatBytes(videoBytes.subarray(0, moov.offset), newMoov);
+        }
+
+        // Fall 2: moov liegt vor mdat (oder anderen Atomen) ->
+        // Altes moov in-place durch gleich großes free-Atom ersetzen und neues moov anhängen!
+        const patched = new Uint8Array(videoBytes); // Kopie der Originaldaten
+        const pView = new DataView(patched.buffer);
+
+        // Falls das letzte Atom size32 === 0 ("bis EOF") hatte, explizite Größe eintragen,
+        // damit es das angehängte moov nicht verschluckt.
+        const lastAtom = topAtoms[topAtoms.length - 1];
+        if (lastAtom && lastAtom.size32 === 0 && lastAtom.size <= 0xFFFFFFFF) {
+          pView.setUint32(lastAtom.offset, lastAtom.size, false);
+        }
+
+        // Altes moov mit gleich großem free-Atom überschreiben (Bytes dahinter bleiben exakt am alten Offset)
+        patched.fill(0, moov.offset, moov.offset + moov.size);
+        if (moov.size <= 0xFFFFFFFF) {
+          pView.setUint32(moov.offset, moov.size, false);
+          patched.set(asciiBytes('free'), moov.offset + 4);
+        } else {
+          pView.setUint32(moov.offset, 1, false);
+          patched.set(asciiBytes('free'), moov.offset + 4);
+          pView.setUint32(moov.offset + 8, Math.floor(moov.size / 0x100000000), false);
+          pView.setUint32(moov.offset + 12, moov.size >>> 0, false);
+        }
+
+        return concatBytes(patched, newMoov);
+      }
+
+      /* =========================================================================
+       * Abhängigkeitsfreier ZIP-Generator (Store-Modus, IEEE CRC-32)
+       * ========================================================================= */
+      const crc32Table = (() => {
+        const table = new Uint32Array(256);
+        for (let i = 0; i < 256; i++) {
+          let c = i;
+          for (let j = 0; j < 8; j++) {
+            c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+          }
+          table[i] = c >>> 0;
+        }
+        return table;
+      })();
+
+      function computeCrc32(bytes) {
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < bytes.length; i++) {
+          crc = crc32Table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+      }
+
+      /** Verpackt eine Liste von { name: string, data: Uint8Array } als gültiges ZIP (Store). */
+      function buildZipStore(files) {
+        const now = new Date();
+        const dosTime =
+          ((now.getHours() & 0x1F) << 11) |
+          ((now.getMinutes() & 0x3F) << 5) |
+          ((now.getSeconds() >> 1) & 0x1F);
+        const dosDate =
+          (((Math.max(1980, now.getFullYear()) - 1980) & 0x7F) << 9) |
+          (((now.getMonth() + 1) & 0x0F) << 5) |
+          (now.getDate() & 0x1F);
+
+        const localParts = [];
+        const centralParts = [];
+        let offset = 0;
+
+        for (let i = 0; i < files.length; i++) {
+          const nameBytes = encoder.encode(files[i].name);
+          const data = files[i].data;
+          const crc = computeCrc32(data);
+          const size = data.length;
+
+          // Local File Header (30 Bytes + Dateiname)
+          const lfh = new Uint8Array(30 + nameBytes.length);
+          const lv = new DataView(lfh.buffer);
+          lv.setUint32(0, 0x04034B50, true);      // Signatur PK\x03\x04
+          lv.setUint16(4, 20, true);              // Version 2.0
+          lv.setUint16(6, 0x0800, true);          // UTF-8 Dateinamen-Flag
+          lv.setUint16(8, 0, true);               // Methode 0 (Store)
+          lv.setUint16(10, dosTime, true);
+          lv.setUint16(12, dosDate, true);
+          lv.setUint32(14, crc, true);
+          lv.setUint32(18, size, true);           // Komprimierte Größe
+          lv.setUint32(22, size, true);           // Unkomprimierte Größe
+          lv.setUint16(26, nameBytes.length, true);
+          lv.setUint16(28, 0, true);              // Extra-Feld-Länge
+          lfh.set(nameBytes, 30);
+
+          localParts.push(lfh, data);
+
+          // Central Directory File Header (46 Bytes + Dateiname)
+          const cdh = new Uint8Array(46 + nameBytes.length);
+          const cv = new DataView(cdh.buffer);
+          cv.setUint32(0, 0x02014B50, true);      // Signatur PK\x01\x02
+          cv.setUint16(4, 20, true);              // Version erstellt
+          cv.setUint16(6, 20, true);              // Version benötigt
+          cv.setUint16(8, 0x0800, true);          // UTF-8 Flag
+          cv.setUint16(10, 0, true);              // Methode 0 (Store)
+          cv.setUint16(12, dosTime, true);
+          cv.setUint16(14, dosDate, true);
+          cv.setUint32(16, crc, true);
+          cv.setUint32(20, size, true);
+          cv.setUint32(24, size, true);
+          cv.setUint16(28, nameBytes.length, true);
+          cv.setUint16(30, 0, true);              // Extra-Feld-Länge
+          cv.setUint16(32, 0, true);              // Kommentar-Länge
+          cv.setUint16(34, 0, true);              // Disk-Nummer
+          cv.setUint16(36, 0, true);              // Interne Attribute
+          cv.setUint32(38, 0, true);              // Externe Attribute
+          cv.setUint32(42, offset, true);         // Relativer Offset des Local Headers
+          cdh.set(nameBytes, 46);
+
+          centralParts.push(cdh);
+          offset += lfh.length + size;
+        }
+
+        const centralDir = concatBytes(...centralParts);
+        const eocd = new Uint8Array(22);
+        const ev = new DataView(eocd.buffer);
+        ev.setUint32(0, 0x06054B50, true);        // Signatur PK\x05\x06
+        ev.setUint16(4, 0, true);                 // Disk-Nummer
+        ev.setUint16(6, 0, true);                 // Start-Disk des CD
+        ev.setUint16(8, files.length, true);      // Einträge auf dieser Disk
+        ev.setUint16(10, files.length, true);     // Einträge gesamt
+        ev.setUint32(12, centralDir.length, true);// Größe des Central Directory
+        ev.setUint32(16, offset, true);           // Offset des Central Directory
+        ev.setUint16(20, 0, true);                // ZIP-Kommentar-Länge
+
+        return concatBytes(...localParts, centralDir, eocd);
+      }
+
+      /* =========================================================================
+       * UI-Aktualisierung & Dateiverarbeitung
+       * ========================================================================= */
+
+      function updateUI() {
+        const ready = Boolean(state.photoBytes && state.videoBytes);
+        downloadsEl.hidden = !ready;
+
+        if (!ready) return;
+
+        // Apple Live Photo benötigt einen MP4/MOV-Container mit moov-Atom
+        const appleSupported = state.videoIsMp4Mov;
+        appleZipBtn.disabled = !appleSupported;
+        appleMovBtn.disabled = !appleSupported;
+        appleJpgBtn.disabled = false;
+
+        // Dezente einzeilige Info-/Hinweiszeile nur wenn hilfreich
+        if (!appleSupported) {
+          setStatus('Hinweis: Video ist kein MP4/MOV — Apple Live Photo nicht verfügbar.');
+        } else {
+          const infoParts = [];
+          if (state.photoConverted) {
+            infoParts.push('Foto zu JPEG konvertiert');
+          }
+          infoParts.push(`${formatSize(state.photoBytes.length)} + ${formatSize(state.videoBytes.length)}`);
+          setStatus(infoParts.join(' · '));
+        }
+      }
+
+      /** Verarbeitet eine ausgewählte Fotodatei. */
+      async function handlePhotoFile(file) {
+        if (!file) return;
+        const seq = ++state.photoSeq;
+        photoNameEl.textContent = file.name;
+        photoRow.classList.add('loaded');
+        state.photoBytes = null;
+        state.photoConverted = false;
+        downloadsEl.hidden = true;
+
+        try {
+          const raw = new Uint8Array(await file.arrayBuffer());
+          if (seq !== state.photoSeq) return;
+
+          if (isJpeg(raw)) {
+            state.photoBytes = raw;
+            state.photoConverted = false;
+          } else {
+            setStatus('Foto wird in JPEG umgewandelt …');
+            const converted = await convertImageToJpeg(file);
+            if (seq !== state.photoSeq) return;
+            state.photoBytes = converted;
+            state.photoConverted = true;
+          }
+
+          state.photoBaseName = sanitizeBaseName(file.name);
+          state.appleUuid = generateUuidV4();
+          setStatus('');
+          updateUI();
+        } catch (err) {
+          if (seq !== state.photoSeq) return;
+          state.photoBytes = null;
+          photoRow.classList.remove('loaded');
+          setStatus(err.message || 'Foto konnte nicht verarbeitet werden.', true);
+        }
+      }
+
+      /** Verarbeitet eine ausgewählte Videodatei. */
+      async function handleVideoFile(file) {
+        if (!file) return;
+        const seq = ++state.videoSeq;
+        videoNameEl.textContent = file.name;
+        videoRow.classList.add('loaded');
+        state.videoBytes = null;
+        downloadsEl.hidden = true;
+
+        try {
+          const raw = new Uint8Array(await file.arrayBuffer());
+          if (seq !== state.videoSeq) return;
+
+          if (raw.length === 0) {
+            throw new Error('Die Videodatei ist leer.');
+          }
+
+          state.videoBytes = raw;
+          state.videoName = file.name;
+          state.videoIsMp4Mov = hasMovMoovAtom(raw);
+          state.appleUuid = generateUuidV4();
+
+          if (!state.photoBytes && !state.videoIsMp4Mov) {
+            setStatus('Hinweis: Video ist kein MP4/MOV — Apple Live Photo nicht verfügbar.');
+          } else {
+            setStatus('');
+          }
+          updateUI();
+        } catch (err) {
+          if (seq !== state.videoSeq) return;
+          state.videoBytes = null;
+          videoRow.classList.remove('loaded');
+          setStatus(err.message || 'Video konnte nicht gelesen werden.', true);
+        }
+      }
+
+      /* Datei-Eingaben */
+      photoInput.addEventListener('change', (e) => handlePhotoFile(e.target.files[0]));
+      videoInput.addEventListener('change', (e) => handleVideoFile(e.target.files[0]));
+
+      /* Dezentes Drag & Drop direkt auf den jeweiligen Zeilen */
+      function attachDropZone(rowEl, handler) {
+        rowEl.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          rowEl.classList.add('dragover');
+        });
+        rowEl.addEventListener('dragleave', () => {
+          rowEl.classList.remove('dragover');
+        });
+        rowEl.addEventListener('drop', (e) => {
+          e.preventDefault();
+          rowEl.classList.remove('dragover');
+          const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+          if (file) handler(file);
+        });
+      }
+
+      attachDropZone(photoRow, handlePhotoFile);
+      attachDropZone(videoRow, handleVideoFile);
+
+      /* Download-Handler für alle Protokolle */
+      downloadsEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-format]');
+        if (!btn || btn.disabled || !state.photoBytes || !state.videoBytes) return;
+
+        const format = btn.dataset.format;
+        const base = state.photoBaseName;
+        if (!state.appleUuid) {
+          state.appleUuid = generateUuidV4();
+        }
+
+        try {
+          switch (format) {
+            case 'universal': {
+              const out = buildUniversalMotionPhoto(state.photoBytes, state.videoBytes);
+              triggerDownload(out, `${base}.MP.jpg`, 'image/jpeg');
+              break;
+            }
+            case 'google-v2': {
+              const out = buildGoogleMotionPhotoV2(state.photoBytes, state.videoBytes);
+              triggerDownload(out, `${base}_google.MP.jpg`, 'image/jpeg');
+              break;
+            }
+            case 'google-legacy': {
+              const out = buildGoogleMicroVideoLegacy(state.photoBytes, state.videoBytes);
+              triggerDownload(out, `MVIMG_${base}.jpg`, 'image/jpeg');
+              break;
+            }
+            case 'samsung': {
+              const out = buildSamsungMotionPhoto(state.photoBytes, state.videoBytes);
+              triggerDownload(out, `${base}_samsung.jpg`, 'image/jpeg');
+              break;
+            }
+            case 'apple-zip': {
+              const jpg = buildAppleLivePhotoJpg(state.photoBytes, state.appleUuid);
+              const mov = buildAppleLivePhotoMov(state.videoBytes, state.appleUuid);
+              const zip = buildZipStore([
+                { name: `${base}.JPG`, data: jpg },
+                { name: `${base}.MOV`, data: mov }
+              ]);
+              triggerDownload(zip, `${base}_LivePhoto.zip`, 'application/zip');
+              break;
+            }
+            case 'apple-jpg': {
+              const jpg = buildAppleLivePhotoJpg(state.photoBytes, state.appleUuid);
+              triggerDownload(jpg, `${base}.JPG`, 'image/jpeg');
+              break;
+            }
+            case 'apple-mov': {
+              const mov = buildAppleLivePhotoMov(state.videoBytes, state.appleUuid);
+              triggerDownload(mov, `${base}.MOV`, 'video/quicktime');
+              break;
+            }
+          }
+        } catch (err) {
+          setStatus(err.message || 'Export fehlgeschlagen.', true);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
